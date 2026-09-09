@@ -748,7 +748,7 @@ app.get('/tracks/:id', (req, res) => {
                 COALESCE(p.profile_color, c.profile_color) AS profile_color,
                 t.root AS root
                 
-                FROM communitytracks c LEFT JOIN profilestatemodel p ON p.player_id = c.player_id LEFT JOIN trackroots t ON t.guid = c.guid WHERE c.guid = ?`, [req.params.id], (err, row) => {
+                FROM communitytracks c LEFT JOIN profilestatemodel p ON p.player_id = c.player_id LEFT JOIN trackroots t ON t.guid = c.guid WHERE c.guid = ? AND c.is_public = 1`, [req.params.id], (err, row) => {
         if (err) {
             console.error("Error fetching community track:", err);
             return res.status(500).json({ success: false });
