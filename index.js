@@ -2683,13 +2683,12 @@ async function updateTournament(tournament, now) {
     if (tournament.status === "idle" && new Date(tournament.register_end) <= now) {
         tournament.allow_new_registration = 0;
         tournament.status = "active";
-        tournament.rounds = await createTournamentRounds(tournament, 10, "DRL")
+        tournament.rounds = await createTournamentRounds(tournament, tournament.player_count, "DRL")
     }
 
-    //tournament.rounds = await createTournamentRounds(tournament, 10, "DRL")
 
     if (tournament.status === "active" && tournament.player_count < 6) {
-        //tournament.status = "fail";
+        tournament.status = "fail";
     }
 
     if (tournament.status === "active") {
