@@ -92,6 +92,10 @@ app.use(rateLimit({
 -------------------------------------------------
 */
 
+const normalizeDate = (value) =>
+    value ? new Date(value).toISOString() : new Date().toISOString();
+
+
 app.use((req, res, next) => {
     console.log(req.url)
     next();
@@ -666,7 +670,7 @@ function shuffle(array) {
 }
 
 const badTokenAuthv2 = (req, res, next) => {
-    const token = req.headers['x-access-jsonwebtoken']
+    const token = req.headers['x-access-jsonwebtoken'] || req.query.token;
     db.get(`SELECT uid, expires FROM user WHERE token = ?`, [token], (err, row) => {
         if (err || !row) {
             console.error("Error fetching UID:", err);
@@ -3827,6 +3831,7 @@ app.get('/tournaments/', (req, res) => {
 function mapLeaderboardSqlToJson(row, i) {
     return {
         "player-id": row[i].player_id,
+        "id": crypto.createHash('sha256').update([row[i].player_id, row[i].map, row[i].track, row[i].diameter, row[i].drl_official, row[i].custom_map ?? "", row[i].match_id].join("|")).digest('hex'),
         "map": row[i].map,
         "track": row[i].track,
         "diameter": row[i].diameter,
@@ -3834,9 +3839,9 @@ function mapLeaderboardSqlToJson(row, i) {
         "drone-name": row[i].drone_name,
         "drone-guid": row[i].drone_guid,
         "profile-platform-id": row[i].profile_platform_id,
-        "username": row[i].username,
+        "username": row[i].profile_name,
         "profile-color": row[i].profile_color,
-        "profile-thumb": row[i].profile_thumb,
+        "profile-thumb": row[i].profile_thumb || "https://raw.githubusercontent.com/gysi/drl-leaderboard-app/refs/heads/main/frontend/src/assets/placeholder.png",
         "profile-name": row[i].profile_name,
         "profile-platform": row[i].profile_platform,
         "is-custom-map": row[i].is_custom_map,
@@ -3883,7 +3888,9 @@ function mapLeaderboardSqlToJson(row, i) {
         "custom-physics": row[i].custom_physics,
         "drl-pilot-mode": row[i].drl_pilot_mode,
         "drone-rig": row[i].drone_rig,
-        "drone-hash": row[i].drone_hash
+        "drone-hash": row[i].drone_hash,
+        "created-at": normalizeDate(row[i].created_at),
+        "updated-at": normalizeDate(row[i].updated_at)
     }
 }
 
@@ -4509,7 +4516,7 @@ app.get('/leaderboards/', badTokenAuthv2, (req, res) => {
             console.error("Error fetching leaderboard:", err);
             res.status(200).json({
                 success: true, data: {
-                    "leaderboard": null,
+                    "leaderboard": [],
                     "pagging": { "page": page, "limit": limit, "total": 2 }
                 }
             });
