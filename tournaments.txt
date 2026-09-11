@@ -27,3 +27,92 @@ DRLTournamentData
   guid: '9054cbe9-c880-4b20-9344-0b2f7824c211',
   scores: '[{"guid":"9cad59d4cd2d9b83ce6ac983","mode":"SinglePlayer","player-id":"b9365d125935475b8327162c66a25e12","crashes":0,"score":87008,"order":0,"type":"Race","map":"MP-3fd","track":"MT-8ab","status":"Success","match-id":"QUALS","heat":0,"gate-times":"[5.10603571,7.752188,12.1575069,14.2219648,16.7926846,19.94974,22.3759975,24.1867332,25.77852,26.401516,31.5691071,35.1140137,38.4297752,38.5389481,41.1422157,43.81099,48.53291,50.52058,56.09431,59.247303,61.62194,63.4595337,65.1657944,65.72077,70.98215,74.811615,78.3543549,78.61861,87.00867]","race-id":"2e3dae0ea690d144b290c910"}]'
 }
+
+
+TournamentMatchPlayerData {
+  guid TEXT
+  player_id TEXT
+  matchID TEXT
+  
+  playerInfo
+  
+  points INT
+  score INT
+  score_total INT
+  position INT
+  total_wins INT
+  is-winner BOOLEAN
+  is-winner-second BOOLEAN
+}
+
+tournamentOverallPlayerData {
+  guid TEXT
+  player_id TEXT
+  
+  playerInfo
+  
+  points INT
+  score INT
+  score_total INT
+  position INT
+  total_wins INT
+  is-winner BOOLEAN
+  is-winner-second BOOLEAN
+}
+
+tournamentRoundScoring {
+  guid TEXT
+  player id TEXT
+  matchID TEXT
+  success BOOLEAN
+  heat INT
+  score INT
+  points INT
+  status TEXT
+  position INT
+  crashes INT
+  race-id TEXT
+}
+
+{
+  guid: '9054cbe9-c880-4b20-9344-0b2f7824c211',
+  scores: '[
+        {
+            "guid": "11a0d2143d988228c606cd10",
+            "mode": "NetworkMultiplayer",
+            "player-id": "76561199168165264",
+            "crashes": 0,
+            "score": 148908,
+            "order": 1,
+            "type": "Race",
+            "map": "MP-3fd",
+            "track": "MT-8ab",
+            "status": "Success",
+            "match-id": "QUALS",
+            "heat": 1,
+            "race-id": "b50554504c318b22559bd6e9"
+        },
+        {
+            "guid": "4a742490e6201169094b008d",
+            "mode": "NetworkMultiplayer",
+            "player-id": "b9365d125935475b8327162c66a25e12",
+            "crashes": 0,
+            "score": 55041,
+            "order": 1,
+            "type": "Race",
+            "map": "MP-3fd",
+            "track": "MT-8ab",
+            "status": "Crash",
+            "match-id": "QUALS",
+            "heat": 1,
+            "race-id": "b50554504c318b22559bd6e9"
+        }
+    ]'
+}
+
+
+
+{
+  guid: '9054cbe9-c880-4b20-9344-0b2f7824c211',
+  scores: '[{"guid":"46d20366b02abe1d7bca6c57","mode":"SinglePlayer","player-id":"b9365d125935475b8327162c66a25e12","crashes":0,"score":82026,"order":0,"type":"Race","map":"MP-3fd","track":"MT-8ab","status":"Success","match-id":"QUALS","heat":0,"gate-times":"[5.18403053,7.91746044,11.767911,13.81807,16.2691727,19.3695145,21.7362556,23.3696346,24.7530022,27.8367519,32.85413,36.1379166,39.40481,39.6214867,42.12157,44.77244,48.7395744,50.8064346,53.4066429,56.8404465,59.22388,60.85736,62.3244667,63.191143,68.09161,71.67521,74.87592,75.12591,82.0268]","race-id":"bab4d6e2ec33789663477442"}]'
+}

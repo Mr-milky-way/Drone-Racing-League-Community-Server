@@ -23,6 +23,7 @@ const db = new sqlite3.Database('main.db', err => {
 const multer = require('multer');
 const { env } = require('process');
 const { ERROR } = require('sqlite3');
+const { match } = require('assert');
 const replayCloud = multer({ dest: 'replay-cloud/' });
 
 process.on("uncaughtException", err => {
@@ -164,9 +165,9 @@ db.serialize(() => {
 
 
     db.run(`CREATE TABLE IF NOT EXISTS tournamentrounds (
-    guid TEXT,
+    guid TEXT NOT NULL,
     title TEXT,
-    roundNumber INT,
+    roundNumber INT NOT NULL,
     status TEXT,
     norder INT,
     start_at DATETIME,
@@ -185,9 +186,9 @@ db.serialize(() => {
 
 
     db.run(`CREATE TABLE IF NOT EXISTS tournamentroundmatches (
-    roundNumber INT,
-    guid TEXT,
-    id TEXT,
+    roundNumber INT NOT NULL,
+    guid TEXT NOT NULL,
+    id TEXT NOT NULL,
     round_id TEXT,
     round_norder INT,
     map TEXT,
@@ -215,6 +216,51 @@ db.serialize(() => {
     player_order TEXT,
 
     PRIMARY KEY (roundNumber, guid, id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS tournamentroundscoring (
+    guid TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    matchID TEXT NOT NULL,
+    success BOOLEAN,
+    heat INT NOT NULL,
+    score INT,
+    points INT,
+    status TEXT,
+    position INT,
+    crashes INT,
+    race_id TEXT,
+
+    PRIMARY KEY (matchID, guid, heat, player_id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS tournamentmatchplayerdata (
+    guid TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    matchID TEXT NOT NULL,
+    points INT,
+    score INT,
+    score_total INT,
+    position INT,
+    total_wins INT,
+    is_winner BOOLEAN,
+    is_winner_second BOOLEAN,
+
+    PRIMARY KEY (matchID, guid, player_id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS tournamentoverallplayerdata (
+    guid TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    points INT,
+    score INT,
+    score_total INT,
+    position INT,
+    total_wins INT,
+    is_winner BOOLEAN,
+    is_winner_second BOOLEAN,
+
+    PRIMARY KEY (guid, player_id)
     )`);
     /*
 db.run("CREATE TABLE IF NOT EXISTS tournamentsubscribed (uid TEXT, guid TEXT, PRIMARY KEY (uid, guid))");
@@ -450,6 +496,7 @@ db.run("CREATE TABLE IF NOT EXISTS tournamentsubscribed (uid TEXT, guid TEXT, PR
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME,
     match_id TEXT DEFAULT 'normal',
+    race_status TEXT DEFAULT 'Success',
     tryouts BOOLEAN,
     battery_resistance FLOAT,
     controller_type TEXT,
@@ -473,14 +520,16 @@ db.run("CREATE TABLE IF NOT EXISTS tournamentsubscribed (uid TEXT, guid TEXT, PR
     high_score BOOLEAN,
     race_id TEXT,
     limit_col INT,
-    heat INT,
+    heat INT DEFAULT -1,
     custom_physics BOOLEAN,
     drl_pilot_mode BOOLEAN,
     drone_rig TEXT,
     drone_hash TEXT,
 
-    PRIMARY KEY (player_id, map, track, diameter, drl_official, custom_map, match_id)
+    PRIMARY KEY (player_id, map, track, diameter, drl_official, custom_map, match_id, race_status, heat)
     );`);
+
+
     //drones
     db.run(`CREATE TABLE IF NOT EXISTS drone (
         guid TEXT UNIQUE,
@@ -598,10 +647,23 @@ db.run("CREATE TABLE IF NOT EXISTS tournamentsubscribed (uid TEXT, guid TEXT, PR
     //db.run("DROP TABLE tournamentroundmatches")
 });
 
+function shuffle(array) {
+    let currentIndex = array.length;
 
 
+    while (currentIndex != 0) {
 
 
+        let randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+
+
+        [array[currentIndex], array[randomIndex]] = [
+            array[randomIndex], array[currentIndex]];
+    }
+
+    return array
+}
 
 const badTokenAuthv2 = (req, res, next) => {
     const token = req.headers['x-access-jsonwebtoken']
@@ -1673,7 +1735,6 @@ function MapPlayerStateTOJson(row) {
             "is-observer": row.is_observer,
             "is-commentator": row.is_commentator
         }
-
         return Object.fromEntries(
             Object.entries(data).filter(([key, value]) => value != null)
         );
@@ -1845,7 +1906,6 @@ async function getSteamProfilePic(steamId) {
 app.post('/state/', express.urlencoded(), badTokenAuthv2, (req, res) => {
     const token = req.headers['x-access-jsonwebtoken'];
     console.log("post sent to /state/ TOKEN:", token, req.headers);
-
     const uid = req.uid;
     req.body.state = JSON.parse(req.body.state)
     db.run(`INSERT INTO profilestatemodel  (
@@ -2325,11 +2385,320 @@ app.post('/state/', express.urlencoded(), badTokenAuthv2, (req, res) => {
 ---------------------------------------------------------------------------------------------------
 */
 
-const QualsTimeMins = 20
+const QualsTimeMins = 10
 
 const RoundTimeMaxMins = 90
 
 var tournamentsMap = new Map();
+
+var tournamentRoundScoring = {};
+var tournamentMatchPlayerData = {};
+
+var tournamentOverallPlayerData = {};
+
+var TournamentMatchReplays = {};
+
+
+
+
+async function loadTournamentOverallPlayerData() {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM tournamentoverallplayerdata`, [], (err, matchPlayerData) => {
+            if (err) {
+                reject()
+                throw console.error("Error loading tournament match player data:", err);
+            }
+            for (let i = 0; i < matchPlayerData.length; i++) {
+                if (!tournamentOverallPlayerData[matchPlayerData[i].guid]) {
+                    tournamentOverallPlayerData[matchPlayerData[i].guid] = [];
+                }
+                let players = tournamentsMap.get(matchPlayerData[i].guid).players;
+
+                let data = {
+                    "player-id": matchPlayerData[i].player_id,
+                    "profile-name": players[matchPlayerData[i].player_id].profile_name,
+                    "profile-thumb": players[matchPlayerData[i].player_id].profile_thumb,
+                    "profile-color": players[matchPlayerData[i].player_id].profile_color,
+                    points: matchPlayerData[i].points,
+                    score: matchPlayerData[i].score,
+                    score_total: matchPlayerData[i].score_total,
+                    position: matchPlayerData[i].position,
+                    total_wins: matchPlayerData[i].total_wins,
+                    "is-winner": matchPlayerData[i].is_winner,
+                    "is-winner-second": matchPlayerData[i].is_winner_second
+                }
+                tournamentOverallPlayerData[matchPlayerData[i].guid].push(data);
+            }
+            resolve()
+        })
+    })
+}
+
+function SaveTournamentOverallPlayerData() {
+    for (const guid in tournamentOverallPlayerData) {
+        const matches = tournamentOverallPlayerData[guid];
+
+        for (const matchID in matches) {
+            const PlayerData = matches[matchID];
+            db.run(
+                `INSERT INTO tournamentoverallplayerdata
+                (guid, player_id, points, score, score_total, position, total_wins, is_winner, is_winner_second)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(guid, player_id) DO UPDATE SET
+                points = excluded.points,
+                score = excluded.score,
+                score_total = excluded.score_total,
+                position = excluded.position,
+                total_wins = excluded.total_wins,
+                is_winner = excluded.is_winner,
+                is_winner_second = excluded.is_winner_second`,
+                [
+                    guid,
+                    PlayerData["player-id"],
+                    PlayerData.points,
+                    PlayerData.score,
+                    PlayerData.score_total,
+                    PlayerData.position,
+                    PlayerData.total_wins,
+                    PlayerData['is-winner'],
+                    PlayerData['is-winner-second']
+                ], (err) => {
+                    if (err) {
+                        console.error("Error saving tournament Overall player data:", err);
+                    }
+                });
+        }
+    }
+}
+
+
+
+async function loadTournamentMatchPlayerData() {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM tournamentmatchplayerdata`, [], (err, matchPlayerData) => {
+            if (err) {
+                reject()
+                throw console.error("Error loading tournament match player data:", err);
+            }
+            for (let i = 0; i < matchPlayerData.length; i++) {
+                if (!tournamentMatchPlayerData[matchPlayerData[i].guid]) {
+                    tournamentMatchPlayerData[matchPlayerData[i].guid] = {};
+                }
+                if (!tournamentMatchPlayerData[matchPlayerData[i].guid][matchPlayerData[i].matchID]) {
+                    tournamentMatchPlayerData[matchPlayerData[i].guid][matchPlayerData[i].matchID] = [];
+                }
+                let players = tournamentsMap.get(matchPlayerData[i].guid).players;
+
+                let data = {
+                    "player-id": matchPlayerData[i].player_id,
+                    "profile-name": players[matchPlayerData[i].player_id].profile_name,
+                    "profile-thumb": players[matchPlayerData[i].player_id].profile_thumb,
+                    "profile-color": players[matchPlayerData[i].player_id].profile_color,
+                    points: matchPlayerData[i].points,
+                    score: matchPlayerData[i].score,
+                    score_total: matchPlayerData[i].score_total,
+                    position: matchPlayerData[i].position,
+                    total_wins: matchPlayerData[i].total_wins,
+                    "is-winner": matchPlayerData[i].is_winner,
+                    "is-winner-second": matchPlayerData[i].is_winner_second
+                }
+                tournamentMatchPlayerData[matchPlayerData[i].guid][matchPlayerData[i].matchID].push(data);
+            }
+            resolve()
+        })
+    })
+}
+
+function SaveTournamentMatchPlayerData() {
+    for (const guid in tournamentMatchPlayerData) {
+        const matches = tournamentMatchPlayerData[guid];
+
+        for (const matchID in matches) {
+            const PlayerData = matches[matchID];
+            for (const player of PlayerData) {
+                db.run(
+                    `INSERT INTO tournamentmatchplayerdata
+                    (guid, player_id, matchID, points, score, score_total, position, total_wins, is_winner, is_winner_second)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(matchID, guid, player_id) DO UPDATE SET
+                    points = excluded.points,
+                    score = excluded.score,
+                    score_total = excluded.score_total,
+                    position = excluded.position,
+                    total_wins = excluded.total_wins,
+                    is_winner = excluded.is_winner,
+                    is_winner_second = excluded.is_winner_second`,
+                    [
+                        guid,
+                        player["player-id"],
+                        matchID,
+                        player.points,
+                        player.score,
+                        player.score_total,
+                        player.position,
+                        player.total_wins,
+                        player['is-winner'],
+                        player['is-winner-second']
+                    ], (err) => {
+                        if (err) {
+                            console.error("Error saving tournament match player data:", err);
+                        }
+                    });
+            }
+        }
+    }
+}
+async function SaveTournamentRoundScoring() {
+    for (const guid in tournamentRoundScoring) {
+        const matches = tournamentRoundScoring[guid];
+
+        for (const matchID in matches) {
+            const scores = matches[matchID];
+
+            for (const score of scores) {
+                await db.run(
+                    `INSERT INTO tournamentroundscoring
+                    (guid, player_id, matchID, success, heat, score, points, status, position, crashes, race_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(guid, player_id, heat, matchID) DO UPDATE SET
+                    success = excluded.success,
+                    heat = excluded.heat,
+                    score = excluded.score,
+                    points = excluded.points,
+                    status = excluded.status,
+                    position = excluded.position,
+                    crashes = excluded.crashes,
+                    race_id = excluded.race_id`,
+                    [
+                        guid,
+                        score["player-id"],
+                        matchID,
+                        score.success,
+                        score.heat,
+                        score.score,
+                        score.points || 0,
+                        score.status,
+                        score.position,
+                        score.crashes,
+                        score["race-id"]
+                    ],
+                    (err) => {
+                        if (err) {
+                            console.error("Error saving tournament round scoring:", err);
+                        }
+                    }
+                );
+            }
+        }
+    }
+}
+
+async function loadTournamentRoundScoring() {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM tournamentroundscoring`, [], (err, scoreData) => {
+            if (err) {
+                reject()
+                throw console.error("Error loading tournament match player data:", err);
+            }
+            for (let i = 0; i < scoreData.length; i++) {
+                const row = {
+                    guid: scoreData[i].guid,
+                    "player-id": scoreData[i].player_id,
+                    "match-id": scoreData[i].matchID,
+                    crashes: scoreData[i].crashes,
+                    score: scoreData[i].score,
+                    status: scoreData[i].status,
+                    success: scoreData[i].success === "Success",
+                    heat: scoreData[i].heat,
+                    "race-id": scoreData[i].race_id,
+                    position: scoreData[i].position,
+                };
+                if (!tournamentRoundScoring[row.guid]) {
+                    tournamentRoundScoring[row.guid] = {};
+                }
+                if (!tournamentRoundScoring[row.guid][row["match-id"]]) {
+                    tournamentRoundScoring[row.guid][row["match-id"]] = [];
+                }
+                tournamentRoundScoring[row.guid][row["match-id"]].push(row);
+            }
+            resolve()
+        })
+    })
+}
+
+TournamentMan();
+
+async function TournamentMan() {
+    await LoadTournaments()
+    await loadTournamentRoundScoring()
+    await loadTournamentMatchPlayerData()
+    await loadTournamentOverallPlayerData()
+    update()
+}
+
+async function LoadTournaments() {
+    const tournaments = await loadAllTournaments();
+    for (const tournament of tournaments) {
+        tournamentsMap.set(tournament.guid, tournament);
+    }
+    console.log(
+        `Loaded ${tournamentsMap.size} tournaments`
+    );
+}
+
+async function update() {
+    const now = new Date();
+
+    for (const tournament of tournamentsMap.values()) {
+        try {
+            console.log(`Trying to update ${tournament.guid}`)
+            await updateTournament(tournament, now);
+        }
+        catch (err) {
+            console.error(
+                `[TournamentManager] Failed updating ${tournament.guid}`,
+                err
+            );
+        }
+    }
+
+    setTimeout(update, 10000)
+}
+
+
+async function updateTournament(tournament, now) {
+
+    if (new Date(tournament.register_end) >= now) {
+        tournament.status = "idle"
+    }
+
+    if (tournament.status === "idle" && tournament.allow_new_registration === 0 && tournament.player_count < tournament.max_players) {
+        tournament.allow_new_registration = 1;
+    }
+
+    if (tournament.status === "idle" && new Date(tournament.register_end) <= now) {
+        tournament.allow_new_registration = 0;
+        tournament.status = "active";
+        tournament.rounds = await createTournamentRounds(tournament, 10, "DRL")
+    }
+
+    //tournament.rounds = await createTournamentRounds(tournament, 10, "DRL")
+
+    if (tournament.status === "active" && tournament.player_count < 6) {
+        //tournament.status = "fail";
+    }
+
+    if (tournament.status === "active") {
+        //tournament.rounds = await updateTournamentRounds(tournament.rounds, now, tournament.players, tournament.guid);
+    }
+    tournament.rounds = await updateTournamentRounds(tournament.rounds, now, tournament.players, tournament.guid);
+
+    await saveTournament(tournament);
+    await SaveTournamentRoundScoring();
+    await SaveTournamentMatchPlayerData();
+    await SaveTournamentOverallPlayerData();
+}
+
 
 function loadAllTournaments() {
     return new Promise((resolve, reject) => {
@@ -2435,29 +2804,168 @@ function loadAllTournaments() {
     });
 }
 
-async function updateTournamentMatch(Match, now, roundinfo, players) {
-    if (Match.status === "active" && new Date(Match.end_at) <= now) {
-        Match.status = "complete"
+
+function GetReplay(MatchId, RaceID, playerID, heat) {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT replay_url FROM leaderboard WHERE match_id = ? AND race_id = ? AND player_id = ? AND heat = ?`, [MatchId, RaceID, playerID, heat], (err, row) => {
+            if (err) {
+                console.error(err);
+                reject(err);
+            } else {
+                resolve(row ? row.replay_url : null);
+            }
+        });
+    });
+}
+
+
+async function updateTournamentMatchReplays(MatchId, guid) {
+    if (!TournamentMatchReplays[guid]) {
+        TournamentMatchReplays[guid] = {};
+    }
+    if (!TournamentMatchReplays[guid][MatchId]) {
+        TournamentMatchReplays[guid][MatchId] = []
+    }
+    let Replaydata = []
+
+    const ScoreingInfo = tournamentRoundScoring[guid]?.[MatchId] ? tournamentRoundScoring[guid][MatchId] : []
+
+    ScoreingInfo.sort((a, b) => a.heat - b.heat)
+
+    let lastheat = -1
+
+    let ReplayDataPerHeat;
+    for (let i = 0; i < ScoreingInfo.length; i++) {
+        const playerScore = ScoreingInfo[i];
+        if (playerScore.heat !== lastheat) {
+            if (ReplayDataPerHeat && ReplayDataPerHeat.urls) {
+                Replaydata.push(ReplayDataPerHeat)
+            }
+            ReplayDataPerHeat = {
+                heat: playerScore.heat
+            }
+            lastheat = playerScore.heat
+        }
+
+        const replay = await GetReplay(MatchId, playerScore['race-id'], playerScore['player-id'], playerScore['heat'])
+
+        if (replay) {
+            if (!ReplayDataPerHeat.urls) {
+                ReplayDataPerHeat.urls = "";
+            }
+            ReplayDataPerHeat.urls += url + replay + ";"
+        }
+    }
+
+    if (ReplayDataPerHeat && ReplayDataPerHeat.urls) {
+        Replaydata.push(ReplayDataPerHeat)
+    }
+    TournamentMatchReplays[guid][MatchId] = Replaydata;
+}
+
+async function updateTournamentMatch(Match, now, roundinfo, players, guid) {
+
+    if (Match.end_at) {
+        if (Match.status === "active" && new Date(Match.end_at) <= now) {
+            Match.status = "complete"
+        }
     }
 
     Match.start_at = roundinfo.start_at
     Match.end_at = roundinfo.end_at
 
-    if (!Match.players && Match.player_ids) {
-        Match.players = []
-        for (const id of Match.player_ids) {
-            console.log(id)
-            Match.players.push(
-                {
-                    "player-id": id,
-                    "profile-name": players[id].profile_name,
-                    "profile-thumb": players[id].profile_thumb,
-                    "profile-color": players[id].profile_color,
-                    "score": 182947,
-                    "position": 1
-                })
+
+    if (!tournamentMatchPlayerData[guid]) {
+        tournamentMatchPlayerData[guid] = {};
+    }
+
+    if (!tournamentOverallPlayerData[guid]) {
+        tournamentOverallPlayerData[guid] = [];
+    }
+
+    if (!tournamentMatchPlayerData[guid][Match.id] || tournamentMatchPlayerData[guid][Match.id].length === 0) {
+        tournamentMatchPlayerData[guid][Match.id] = [];
+        if (Match.player_ids) {
+            for (const id of Match.player_ids) {
+                tournamentMatchPlayerData[guid][Match.id].push(
+                    {
+                        "player-id": id,
+                        "profile-name": players[id].profile_name,
+                        "profile-thumb": players[id].profile_thumb,
+                        "profile-color": players[id].profile_color,
+                    })
+            }
         }
     }
+
+    if (tournamentMatchPlayerData[guid][Match.id]) {
+
+        if (Match.mode === "leaderboard") {
+
+            tournamentMatchPlayerData[guid][Match.id].sort((a, b) => {
+                if (a.score && b.score)
+                    return a.score - b.score;
+                else if (a.score)
+                    return -1
+                else if (b.score)
+                    return 1
+
+                return 0;
+            });
+
+            for (let i = 0; i < tournamentMatchPlayerData[guid][Match.id].length; i++) {
+                tournamentMatchPlayerData[guid][Match.id][i].position = i + 1;
+                if (tournamentMatchPlayerData[guid][Match.id][i].position <= Match.num_winners && tournamentMatchPlayerData[guid][Match.id][i].score > -1) {
+                    tournamentMatchPlayerData[guid][Match.id][i]['is-winner'] = true;
+                } else {
+                    tournamentMatchPlayerData[guid][Match.id][i]['is-winner'] = false;
+                }
+            }
+        } else if (Match.mode === "sudden_death") {
+
+            tournamentMatchPlayerData[guid][Match.id].sort((a, b) => {
+                return b.total_wins - a.total_wins;
+            })
+
+            for (let i = 0; i < tournamentMatchPlayerData[guid][Match.id].length; i++) {
+                tournamentMatchPlayerData[guid][Match.id][i].position = i + 1;
+                if (tournamentMatchPlayerData[guid][Match.id][i].position <= Match.num_winners && tournamentMatchPlayerData[guid][Match.id][i].total_wins > 0) {
+                    tournamentMatchPlayerData[guid][Match.id][i]['is-winner'] = true;
+                } else {
+                    tournamentMatchPlayerData[guid][Match.id][i]['is-winner'] = false;
+                }
+            }
+
+        } else if (Match.mode === "golden_heat") {
+            for (let i = 0; i < tournamentMatchPlayerData[guid][Match.id].length; i++) {
+                tournamentMatchPlayerData[guid][Match.id][i].position = i + 1;
+                if (tournamentMatchPlayerData[guid][Match.id][i].total_wins > 0) {
+                    tournamentMatchPlayerData[guid][Match.id][i]['is-winner'] = true;
+                }
+            }
+            if (Match.active_heat === Match.heats) {
+                Match.status = "complete"
+            }
+            if (tournamentRoundScoring[guid]?.[Match.id]) {
+                for (let i = 0; i < tournamentRoundScoring[guid][Match.id].length; i++) {
+                    const playerScore = tournamentRoundScoring[guid][Match.id][i];
+                    if (playerScore.heat === Match.heats) {
+                        const existingPlayer = tournamentOverallPlayerData[guid].find(p => p['player-id'] === playerScore['player-id']);
+                        if (existingPlayer) {
+                            existingPlayer.position = playerScore.position;
+                        } else {
+                            const playerinfo = tournamentMatchPlayerData[guid][Match.id].find(p => p['player-id'] === playerScore['player-id'])
+                            playerinfo.position = playerScore.position
+                            tournamentOverallPlayerData[guid].push(playerinfo)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    await updateTournamentMatchReplays(Match.id, guid)
 
     if (roundinfo.status === "active" && Match.status === "idle") {
         Match.status = "waiting"
@@ -2465,8 +2973,29 @@ async function updateTournamentMatch(Match, now, roundinfo, players) {
     return Match
 }
 
-async function updateTournamentRounds(rounds, now, players) {
+async function SeedNextRound(CurrentRoundMatches, MatchesToSeed, guid) {
+    let PlayerIdsToAdvance = []
+
+    for (const Match of CurrentRoundMatches) {
+        for (const Player of tournamentMatchPlayerData[guid][Match.id]) {
+            if (Player['is-winner'] === true)
+                PlayerIdsToAdvance.push(Player['player-id'])
+        }
+    }
+
+    PlayerIdsToAdvance = await shuffle(PlayerIdsToAdvance)
+
+    for (let i = 0; i < MatchesToSeed.length; i++) {
+        MatchesToSeed[i].player_ids = PlayerIdsToAdvance.splice(0, MatchesToSeed[i].players_size)
+        MatchesToSeed[i].status = "active"
+    }
+
+    return MatchesToSeed
+}
+
+async function updateTournamentRounds(rounds, now, players, guid) {
     let LastRoundStatus = "NoLastRound"
+
     for (i = 0; i < rounds.length; i++) {
         const round = rounds[i]
 
@@ -2475,64 +3004,55 @@ async function updateTournamentRounds(rounds, now, players) {
         }
 
 
-        if (round.end_at) {
-            if (round.status === "active" && new Date(round.end_at) <= now) {
-                round.status = "complete"
-            }
-        }
 
-
-        if (LastRoundStatus === "complete" && round.status === "idle") {
+        if (LastRoundStatus === "complete" && round.status === "active" && !round.start_at) {
             round.status = "active"
             round.start_at = new Date().toISOString()
             round.end_at = new Date(Date.now() + RoundTimeMaxMins * 60 * 1000).toISOString()
         }
 
-        for (e = 0; e < round.matches.length; e++) {
-            round.matches[e] = await updateTournamentMatch(round.matches[e], now, round, players);
+        AllMatchesComplete = true
+        for (let e = 0; e < round.matches.length; e++) {
+            round.matches[e] = await updateTournamentMatch(round.matches[e], now, round, players, guid);
+            if (round.matches[e].status !== "complete") {
+                AllMatchesComplete = false;
+            }
+        }
+
+        if (AllMatchesComplete) {
+            round.status = "complete"
+            if (i + 1 === rounds.length) {
+                tournamentsMap.get(guid).status = "complete"
+            } else {
+                rounds[i + 1].matches = await SeedNextRound(round.matches, rounds[i + 1].matches, guid)
+                rounds[i + 1].status = "active"
+            }
+        }
+
+        if (round.end_at) {
+            if (round.status === "active" && new Date(round.end_at) <= now && round.mode == "leaderboard") {
+                round.status = "complete"
+                rounds[i + 1].matches = await SeedNextRound(round.matches, rounds[i + 1].matches, guid)
+                rounds[i + 1].status = "active"
+            }
         }
         LastRoundStatus = round.status;
         rounds[i] = round;
     }
+
     return rounds
 }
 
-async function updateTournament(tournament, now) {
 
-
-    if (new Date(tournament.register_end) >= now) {
-        tournament.status = "idle"
-    }
-
-    if (tournament.status === "idle" && tournament.allow_new_registration === 0 && tournament.player_count < tournament.max_players) {
-        tournament.allow_new_registration = 1;
-    }
-
-    if (tournament.status === "idle" && new Date(tournament.register_end) <= now) {
-        tournament.allow_new_registration = 0;
-        tournament.status = "active";
-        tournament.rounds = await createTournamentRounds(tournament, 48, "DRL")
-    }
-    tournament.rounds = await createTournamentRounds(tournament, 48, "DRL")
-    if (tournament.status === "active" && tournament.player_count < 2) {
-        //tournament.status = "fail";
-    }
-
-    if (tournament.status === "active") {
-        tournament.rounds = await updateTournamentRounds(tournament.rounds, now, tournament.players);
-    }
-
-    saveTournament(tournament);
-}
 
 function createTournamentRounds(tournament, playerCount, tournamentType) {
     if (tournamentType === "DRL") {
         const rounds = [];
         let currentPlayers = playerCount;
 
-        const targetBracketSize = currentPlayers > 24 ? 24 : (currentPlayers > 12 ? 12 : currentPlayers);
+        const targetBracketSize = currentPlayers > 24 ? 24 : (currentPlayers > 12 ? 12 : (currentPlayers > 6 ? 6 : 6));
         let roundNumber = 0;
-        if (currentPlayers > targetBracketSize) {
+        if (currentPlayers >= targetBracketSize) {
             rounds.push({
                 status: "active",
                 norder: 1,
@@ -2568,12 +3088,14 @@ function createTournamentRounds(tournament, playerCount, tournamentType) {
 
             let title
             let Matches = []
+            let mode = "sudden_death"
             if (currentPlayers === 24)
                 title = "QUARTERFINALS"
             else if (currentPlayers === 12) {
                 title = "SEMIFINALS"
             } else if (currentPlayers === 6) {
                 title = "FINALS"
+                mode = "golden_heat"
             }
 
             rounds.push({
@@ -2590,7 +3112,7 @@ function createTournamentRounds(tournament, playerCount, tournamentType) {
                 custom_map: tournament.custom_map,
                 custom_map_title: tournament.custom_map_title,
                 multiplayer_countdown: true,
-                mode: "match_points",
+                mode: mode,
                 timeout: 0,
                 matches: [],
                 roundId: "ROUND" + roundNumber,
@@ -2615,7 +3137,7 @@ function createTournamentMatches(matchCount, roundINFO, targetBracketSize, numbe
     for (i = 0; i < matchCount; i++) {
         if (roundINFO.title === "QUALIFIERS") {
             matches.push({
-                id: "QUALS",
+                id: "QUALS" + crypto.randomUUID(),
                 round_id: roundINFO.roundId,
                 round_norder: roundINFO.norder,
                 map: roundINFO.map,
@@ -2629,7 +3151,7 @@ function createTournamentMatches(matchCount, roundINFO, targetBracketSize, numbe
                 throttle_cap: 0,
                 heats: 4,
                 current_heat: 1,
-                active_heat: 1,
+                active_heat: 0,
                 num_winners: targetBracketSize,
                 start_at: roundINFO.start_at,
                 end_at: roundINFO.end_at,
@@ -2639,7 +3161,7 @@ function createTournamentMatches(matchCount, roundINFO, targetBracketSize, numbe
             })
         } else if (roundINFO.title === "QUARTERFINALS") {
             matches.push({
-                id: "QUARTERFINALS" + i,
+                id: "QUARTERFINALS" + crypto.randomUUID(),
                 round_id: roundINFO.roundId,
                 round_norder: roundINFO.norder,
                 map: roundINFO.map,
@@ -2654,6 +3176,8 @@ function createTournamentMatches(matchCount, roundINFO, targetBracketSize, numbe
                 num_winners: 3,
                 norder: i + 1,
                 heats: 4,
+                current_heat: 1,
+                active_heat: 0,
                 start_at: roundINFO.start_at,
                 end_at: roundINFO.end_at,
                 status: "idle",
@@ -2661,7 +3185,7 @@ function createTournamentMatches(matchCount, roundINFO, targetBracketSize, numbe
             })
         } else if (roundINFO.title === "SEMIFINALS") {
             matches.push({
-                id: "SEMIFINALS" + i,
+                id: "SEMIFINALS" + crypto.randomUUID(),
                 round_id: roundINFO.roundId,
                 round_norder: roundINFO.norder,
                 map: roundINFO.map,
@@ -2676,6 +3200,8 @@ function createTournamentMatches(matchCount, roundINFO, targetBracketSize, numbe
                 num_winners: 3,
                 norder: i + 1,
                 heats: 4,
+                current_heat: 1,
+                active_heat: 0,
                 start_at: roundINFO.start_at,
                 end_at: roundINFO.end_at,
                 status: "idle",
@@ -2683,7 +3209,7 @@ function createTournamentMatches(matchCount, roundINFO, targetBracketSize, numbe
             })
         } else if (roundINFO.title === "FINALS") {
             matches.push({
-                id: "FINALS" + i,
+                id: "FINALS" + crypto.randomUUID(),
                 round_id: roundINFO.roundId,
                 round_norder: roundINFO.norder,
                 map: roundINFO.map,
@@ -2696,7 +3222,9 @@ function createTournamentMatches(matchCount, roundINFO, targetBracketSize, numbe
                 players_size: numberOfPlayers,
                 throttle_cap: 0,
                 num_winners: 1,
-                heats: 4,
+                heats: 7,
+                current_heat: 1,
+                active_heat: 0,
                 start_at: roundINFO.start_at,
                 end_at: roundINFO.end_at,
                 status: "idle",
@@ -2881,46 +3409,7 @@ async function saveRound(round, tournament) {
     })
 }
 
-async function LoadTournaments() {
-    const tournaments = await loadAllTournaments();
-    for (const tournament of tournaments) {
-        tournamentsMap.set(tournament.guid, tournament);
-    }
-    console.log(
-        `Loaded ${tournamentsMap.size} tournaments`
-    );
-}
-
-async function update() {
-    const now = new Date();
-
-    for (const tournament of tournamentsMap.values()) {
-        try {
-            console.log(`Trying to update ${tournament.guid}`)
-            await updateTournament(tournament, now);
-        }
-        catch (err) {
-            console.error(
-                `[TournamentManager] Failed updating ${tournament.guid}`,
-                err
-            );
-        }
-    }
-
-    setTimeout(update, 10000)
-}
-
-
-
-async function TournamentMan() {
-    await LoadTournaments()
-    update()
-}
-
-
-TournamentMan();
-
-function mapTournamentMatchSqlToJson(Match) {
+function mapTournamentMatchSqlToJson(Match, guid) {
     let data = {
         id: Match.id,
         "round-id": Match.round_id,
@@ -2945,7 +3434,9 @@ function mapTournamentMatchSqlToJson(Match) {
         status: Match.status,
         "player-ids": Match.player_ids,
         mode: Match.mode,
-        players: Match.players || [],
+        players: tournamentMatchPlayerData[guid]?.[Match.id] ? tournamentMatchPlayerData[guid][Match.id] : [],
+        "scores": tournamentRoundScoring[guid]?.[Match.id] ? tournamentRoundScoring[guid][Match.id] : [],
+        "replay-urls": TournamentMatchReplays[guid]?.[Match.id] ? TournamentMatchReplays[guid][Match.id] : []
     }
 
     return Object.fromEntries(
@@ -3045,7 +3536,7 @@ function mapTournamentsSqlToJson(row, playerids, player_count, ranking, rounds) 
                 let M = []
                 if (round.matches) {
                     round.matches.forEach(Match => {
-                        M.push(mapTournamentMatchSqlToJson(Match));
+                        M.push(mapTournamentMatchSqlToJson(Match, row.guid));
                     });
                 }
                 datas.matches = M
@@ -3064,31 +3555,57 @@ function mapTournamentsSqlToJson(row, playerids, player_count, ranking, rounds) 
     }
 }
 
+app.get(`/tournaments/:guid/matches/:mid/heat/:hidx`, (req, res) => {
+    let tournament = tournamentsMap.get(req.params.guid)
+
+
+    const guid = req.params.guid
+    const mid = req.params.mid
+    const hidx = req.params.hidx
+
+    let MatchScoring = tournamentRoundScoring[guid][mid]
+
+    let HeatScores = []
+    for (const score of MatchScoring) {
+        if (score.heat == hidx) {
+            score.username = tournament.players[score["player-id"]].profile_name
+            score.color = tournament.players[score["player-id"]].profile_color
+            HeatScores.push(score)
+        }
+    }
+    res.status(200).json({
+        success: true, data: {
+            "results-arrived": HeatScores[0] ? true : false,
+            results: HeatScores
+        }
+    });
+})
+
 app.get(`/tournaments/:guid/results/:roundid`, (req, res) => {
-    console.log("/tournaments/:guid/results/:roundid")
-    console.log(req.params.guid)
-    console.log(req.params.roundid)
+    const guid = req.params.guid
+
+    let tournament = tournamentsMap.get(guid)
+
+    if (!tournament)
+        return res.status(404).json({ success: false })
+
+
+    let found = tournament.rounds.find(m => m.roundId === req.params.roundid);
+
+
+    if (!found)
+        return res.status(404).json({ success: false })
+
+
+
     res.status(200).json({
         success: true, data: {
             "status": "success",
             "leaderboard-params": [
-                { guid: req.params.guid, match: "QUALS" }
+                { guid: guid, match: found.matches[0].id }
             ],
-            "matches": [
-                {
-                    "player-id": "b9365d125935475b8327162c66a25e12",
-                    score: 1,
-                    "match-id": "QUALS",
-                    "position": 1,
-                    "heat": 0,
-                    "crashes": 0,
-                    "points": 0,
-                }
-            ],
-            "leaderboard": [{
-                "player-id": "b9365d125935475b8327162c66a25e12",
-                "profile-name": "BOY BOY"
-            }]
+            "matches": [],
+            "leaderboard": tournamentMatchPlayerData[guid]?.[found.matches[0].id] ? tournamentMatchPlayerData[guid][found.matches[0].id] : []
         }
     })
 })
@@ -3144,21 +3661,147 @@ app.get(`/tournaments/:guid/matches/:mid`, (req, res) => {
     if (!found)
         return res.status(404).json({ success: false })
 
-    console.log(mapTournamentMatchSqlToJson(found))
-    res.status(200).json({ success: true, data: [mapTournamentMatchSqlToJson(found)] });
+    res.status(200).json({ success: true, data: [mapTournamentMatchSqlToJson(found, req.params.guid)] });
 
 })
 
+
 app.post(`/tournaments/:guid/scores`, express.urlencoded({ extended: true }), badTokenAuthv2, (req, res) => {
     console.log("/tournaments/:guid/scores")
-    console.log(req.body)
+    let scoreData = JSON.parse(req.body.scores)
+    if (scoreData.length === 0)
+        return res.status(200).json({ success: true });
+
+    const guid = req.params.guid;
+    const MatchId = scoreData[0]["match-id"];
+    const DataMode = scoreData[0].mode;
+
+
+    if (!tournamentRoundScoring[guid]) {
+        tournamentRoundScoring[guid] = {};
+    }
+
+    if (!tournamentRoundScoring[guid][MatchId])
+        tournamentRoundScoring[guid][MatchId] = []
+
+    if (!tournamentMatchPlayerData[guid]) {
+        tournamentMatchPlayerData[guid] = {};
+    }
+
+    if (!tournamentMatchPlayerData[guid][MatchId]) {
+        tournamentMatchPlayerData[guid][MatchId] = [];
+    }
+
+
+
+
+    scoreData.sort((a, b) => {
+        if (a.status === b.status) {
+            if (a.status === "Success") {
+                return a.score - b.score;
+            } else {
+                return b.score - a.score;
+            }
+        }
+
+        if (a.status === "Success") return -1;
+        if (b.status === "Success") return 1;
+
+        return b.score - a.score;
+    });
+
+    let FullData = [];
+    for (let i = 0; i < scoreData.length; i++) {
+        let data = {
+            guid: guid,
+            "player-id": scoreData[i]["player-id"],
+            "match-id": scoreData[i]["match-id"],
+            crashes: scoreData[i].crashes,
+            score: scoreData[i].score,
+            status: scoreData[i].status,
+            success: scoreData[i].status === "Success",
+            heat: scoreData[i].heat,
+            "race-id": scoreData[i]["race-id"],
+            position: i + 1
+        }
+
+
+        if (DataMode === "SinglePlayer") {
+
+            let PlayerFound = false
+            for (let e = 0; e < tournamentRoundScoring[guid][MatchId].length; e++) {
+                if (tournamentRoundScoring[guid][MatchId][e]["player-id"] === scoreData[0]["player-id"] && tournamentRoundScoring[guid][MatchId][e].score < scoreData[0].score) {
+                    return res.status(200).json({ success: true });
+                } else if (tournamentRoundScoring[guid][MatchId][e]["player-id"] === scoreData[0]["player-id"]) {
+                    tournamentRoundScoring[guid][MatchId][e] = data
+                    PlayerFound = true
+                    break;
+                }
+            }
+
+            if (PlayerFound === false) {
+                tournamentRoundScoring[guid][MatchId].push(data)
+            }
+        }
+
+        for (let e = 0; e < tournamentMatchPlayerData[guid][MatchId].length; e++) {
+            if (tournamentMatchPlayerData[guid][MatchId][e]["player-id"] === data["player-id"]) {
+                if (DataMode === "NetworkMultiplayer" && i === 0)
+                    tournamentMatchPlayerData[guid][MatchId][e].total_wins = (tournamentMatchPlayerData[guid][MatchId][e].total_wins || 0) + 1;
+
+                if (DataMode === "NetworkMultiplayer" && i === 1 && tournamentMatchPlayerData[guid][MatchId][e]['is-winner-second'] !== true) {
+                    tournamentMatchPlayerData[guid][MatchId][e]['is-winner-second'] = true;
+                } else if (DataMode === "NetworkMultiplayer" && i === 1 && tournamentMatchPlayerData[guid][MatchId][e]['is-winner-second'] === true) {
+                    tournamentMatchPlayerData[guid][MatchId][e]['is-winner'] = true;
+                }
+
+                tournamentMatchPlayerData[guid][MatchId][e].score = data.score;
+                tournamentMatchPlayerData[guid][MatchId][e].crashes = data.crashes;
+                tournamentMatchPlayerData[guid][MatchId][e].position = data.position;
+                break;
+            }
+
+        }
+
+        FullData.push(data)
+    }
+
+
+    if (DataMode === "NetworkMultiplayer") {
+        tournamentRoundScoring[guid][MatchId].push(...FullData);
+
+
+        let MatchData = null;
+        let tournament = tournamentsMap.get(req.params.guid)
+        for (let i = 0; i < tournament.rounds.length; i++) {
+            for (let e = 0; e < tournament.rounds[i].matches.length; e++) {
+                if (tournament.rounds[i].matches[e].id === MatchId) {
+                    if (tournament.rounds[i].matches[e].heats > tournament.rounds[i].matches[e].current_heat) {
+                        tournament.rounds[i].matches[e].current_heat++;
+                        tournament.rounds[i].matches[e].active_heat++;
+                    }else if (tournament.rounds[i].matches[e].active_heat < tournament.rounds[i].matches[e].heats) {
+                        tournament.rounds[i].matches[e].active_heat++; // For the last round
+                    } else {
+                        console.log("marking match as complete")
+                        tournament.rounds[i].matches[e].status = "complete";
+                    }
+
+                    MatchData = tournament.rounds[i].matches[e]
+                    break;
+                }
+            }
+        }
+    }
+
+    res.status(200).json({ success: true });
 })
 
 
 
 app.get(`/tournaments/:guid`, (req, res) => {
-    let tournament = tournamentsMap.get(req.params.guid)
-    tournament = mapTournamentsSqlToJson(tournament, tournament.playerids, tournament.player_count, null, tournament.rounds);
+    const GUID = req.params.guid
+    let tournament = tournamentsMap.get(GUID)
+    tournament = mapTournamentsSqlToJson(tournament, tournament.playerids, tournament.player_count, tournamentOverallPlayerData[GUID] ? tournamentOverallPlayerData[GUID] : [], tournament.rounds);
     res.status(200).json({ success: true, data: [tournament] });
 })
 
@@ -3375,25 +4018,33 @@ app.post('/leaderboards/', express.urlencoded({ extended: false }), badTokenAuth
             inputs = [uid, parsed[0].map, parsed[0].track, diameter, parsed[0]["drl-official"], parsed[0]['custom-map']]
             inputs1 = [parsed[0].map, parsed[0].track, diameter, parsed[0]["drl-official"], parsed[0]['custom-map']]
         } else {
-            query = `WHERE player_id = ? AND map = ? AND track = ? AND diameter = ? AND drl_official = ? `
-            query1 = `WHERE map = ? AND track = ? AND diameter = ? AND drl_official = ? AND custom_map = ? `
+            query = `WHERE player_id = ? AND map = ? AND track = ? AND diameter = ? AND drl_official = ?`
+            query1 = `WHERE map = ? AND track = ? AND diameter = ? AND drl_official = ?`
             inputs = [uid, parsed[0].map, parsed[0].track, diameter, parsed[0]["drl-official"]]
             inputs1 = [parsed[0].map, parsed[0].track, diameter, parsed[0]["drl-official"], parsed[0]['custom-map']]
         }
         console.log(`SELECT * FROM leaderboard ${query} `, inputs)
+
         db.get(`SELECT * FROM leaderboard ${query}`, inputs, (err, row) => {
             if (err || !row) {
                 console.error("Error fetching leaderboard:", err);
             }
+
             const isNewRow = !row;
             let isBetterScore =
                 row && row.score != null && parsed[0].score != null
                     ? parsed[0].score < row.score
                     : true;
 
+
+            if (parsed[0].heat && parsed[0].heat > 0) {
+                isBetterScore = true
+            }
+
             if (parsed[0]['race-status'] && parsed[0]['race-status'] != "Success") {
                 isBetterScore = false
             }
+            console.log(parsed[0]['race-status'])
             if (isBetterScore || isNewRow) {
                 if (!isNewRow) {
                     let rep = row.replay_url
@@ -3411,12 +4062,10 @@ app.post('/leaderboards/', express.urlencoded({ extended: false }), badTokenAuth
                         console.log("No old replay")
                     }
                 }
-
-                console.log(parsed[0])
                 const stmt = db.prepare(
-                    `INSERT INTO leaderboard (player_id, profile_name, profile_color, map, track, is_custom_map, custom_map, mission, group_id, game_type, diameter, drone_name, drone_thumb, multiplayer, multiplayer_room_id, multiplayer_room_size, multiplayer_player_id, multiplayer_master_id, multiplayer_player_position, flag_url, score_type, match_id, tryouts, battery_resistance, controller_type, score, score_check, score_double_check, score_cheat, score_cheat_ratio, score_cheat_samples, crash_count, top_speed, time_in_first, lap_times, gate_times, fastest_lap, slowest_lap, total_distance, order_col, high_score, race_id, limit_col, heat, custom_physics, drl_official, drl_pilot_mode, drone_guid, drone_rig, drone_hash, updated_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                                ON CONFLICT(player_id, map, track, diameter, drl_official, custom_map, match_id) DO UPDATE SET score = excluded.score, score_check = excluded.score_check, score_double_check = excluded.score_double_check, controller_type = excluded.controller_type, score_cheat = excluded.score_cheat, score_cheat_ratio = excluded.score_cheat_ratio, score_cheat_samples = excluded.score_cheat_samples, crash_count = excluded.crash_count, top_speed = excluded.top_speed, lap_times = excluded.lap_times, gate_times = excluded.gate_times, fastest_lap = excluded.fastest_lap, slowest_lap = excluded.slowest_lap, total_distance = excluded.total_distance, race_id = excluded.race_id, drone_name = excluded.drone_name, drone_guid = excluded.drone_guid, updated_at = datetime('now');`
+                    `INSERT INTO leaderboard (player_id, profile_name, profile_color, map, track, is_custom_map, custom_map, mission, group_id, game_type, diameter, drone_name, drone_thumb, multiplayer, multiplayer_room_id, multiplayer_room_size, multiplayer_player_id, multiplayer_master_id, multiplayer_player_position, flag_url, score_type, match_id, tryouts, battery_resistance, controller_type, score, score_check, score_double_check, score_cheat, score_cheat_ratio, score_cheat_samples, crash_count, top_speed, time_in_first, lap_times, gate_times, fastest_lap, slowest_lap, total_distance, order_col, high_score, race_id, limit_col, heat, custom_physics, drl_official, drl_pilot_mode, drone_guid, drone_rig, drone_hash, race_status, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                                ON CONFLICT(player_id, map, track, diameter, drl_official, custom_map, match_id, race_status, heat) DO UPDATE SET score = excluded.score, score_check = excluded.score_check, score_double_check = excluded.score_double_check, controller_type = excluded.controller_type, score_cheat = excluded.score_cheat, score_cheat_ratio = excluded.score_cheat_ratio, score_cheat_samples = excluded.score_cheat_samples, crash_count = excluded.crash_count, top_speed = excluded.top_speed, lap_times = excluded.lap_times, gate_times = excluded.gate_times, fastest_lap = excluded.fastest_lap, slowest_lap = excluded.slowest_lap, total_distance = excluded.total_distance, race_id = excluded.race_id, drone_name = excluded.drone_name, drone_guid = excluded.drone_guid, updated_at = datetime('now');`
                 );
                 stmt.run(
                     uid,
@@ -3462,13 +4111,14 @@ app.post('/leaderboards/', express.urlencoded({ extended: false }), badTokenAuth
                     parsed[0]['high-score'] ? parsed[0]['high-score'] : null,
                     parsed[0]['race-id'] ? parsed[0]['race-id'] : null,
                     parsed[0]['limit-col'] ? parsed[0]['limit-col'] : null,
-                    parsed[0]['heat'] ? parsed[0]['heat'] : null,
+                    parsed[0]['heat'] ? parsed[0]['heat'] : -1,
                     parsed[0]['custom-physics'] === true ? true : false,
                     parsed[0]['drl-official'] ? parsed[0]['drl-official'] : false,
                     parsed[0]['drl-pilot-mode'] ? parsed[0]['drl-pilot-mode'] : null,
                     parsed[0]['drone-guid'] ? parsed[0]['drone-guid'] : null,
                     parsed[0]['drone-rig'] ? parsed[0]['drone-rig'] : null,
                     parsed[0]['drone-hash'] ? parsed[0]['drone-hash'] : null,
+                    parsed[0]['race-status'],
                     (err) => {
 
                         if (err) {
@@ -4897,6 +5547,7 @@ app.post(`/admin/tournaments/create/`, express.json(), (req, res) => {
             console.error("Error creating tournament:", err);
             return res.status(500).json({ success: false });
         }
+        LoadTournaments()
         res.status(200).json({ success: true });
     });
 });
