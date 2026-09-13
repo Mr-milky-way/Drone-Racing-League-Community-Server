@@ -228,6 +228,12 @@ function SubmitForm() {
             ? registerEnd + ":00.000Z"
             : null;
 
+        console.log("Input start:", registerStart);
+        console.log("UTC start:", startUTC);
+
+        console.log("Input end:", registerEnd);
+        console.log("UTC end:", endUTC);
+
         const formData = {
             "automated": document.getElementById('automated').value === 'true',
             "recurr_every_days": parseInt(document.getElementById('recurr-every').value) || null,
@@ -268,6 +274,12 @@ function SubmitForm() {
             "age_check": document.getElementById('age-check').value === 'true',
             "age_check_number": parseInt(document.getElementById('age-check-number').value) || null
         }
+
+        console.log("FORM DATA BEING SENT:");
+        console.log(formData);
+
+        console.log("FORM DATA JSON:");
+        console.log(JSON.stringify(formData));
         fetch(url, {
             method: 'PUT',
             headers: {

@@ -3782,7 +3782,7 @@ app.post(`/tournaments/:guid/scores`, express.urlencoded({ extended: true }), ba
                     if (tournament.rounds[i].matches[e].heats > tournament.rounds[i].matches[e].current_heat) {
                         tournament.rounds[i].matches[e].current_heat++;
                         tournament.rounds[i].matches[e].active_heat++;
-                    }else if (tournament.rounds[i].matches[e].active_heat < tournament.rounds[i].matches[e].heats) {
+                    } else if (tournament.rounds[i].matches[e].active_heat < tournament.rounds[i].matches[e].heats) {
                         tournament.rounds[i].matches[e].active_heat++; // For the last round
                     } else {
                         console.log("marking match as complete")
@@ -5370,8 +5370,8 @@ app.put(`/admin/tournaments/update/:guid`, express.json(), (req, res) => {
         req.body.terms_and_conditions_url,
         req.body.region,
         req.body.max_players,
-        new Date(req.body.register_start).toISOString(),
-        new Date(req.body.register_end).toISOString(),
+        req.body.register_start,
+        req.body.register_end,
         req.body.status,
         req.body.type,
         req.body.progression,
@@ -5396,6 +5396,25 @@ app.put(`/admin/tournaments/update/:guid`, express.json(), (req, res) => {
             LoadTournaments()
             res.status(200).json({ success: true });
         })
+
+
+    console.log("Received start:", req.body.register_start);
+    console.log("Received end:", req.body.register_end);
+
+    console.log(
+        "Server timezone:",
+        Intl.DateTimeFormat().resolvedOptions().timeZone
+    );
+
+    console.log(
+        "Server time:",
+        new Date().toString()
+    );
+
+    console.log(
+        "Server UTC:",
+        new Date().toISOString()
+    );
 })
 
 app.post(`/admin/createapiKey/`, express.json(), (req, res) => {
