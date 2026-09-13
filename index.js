@@ -5396,25 +5396,6 @@ app.put(`/admin/tournaments/update/:guid`, express.json(), (req, res) => {
             LoadTournaments()
             res.status(200).json({ success: true });
         })
-
-
-    console.log("Received start:", req.body.register_start);
-    console.log("Received end:", req.body.register_end);
-
-    console.log(
-        "Server timezone:",
-        Intl.DateTimeFormat().resolvedOptions().timeZone
-    );
-
-    console.log(
-        "Server time:",
-        new Date().toString()
-    );
-
-    console.log(
-        "Server UTC:",
-        new Date().toISOString()
-    );
 })
 
 app.post(`/admin/createapiKey/`, express.json(), (req, res) => {

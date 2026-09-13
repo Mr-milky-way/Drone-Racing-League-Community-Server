@@ -1,6 +1,8 @@
 const urlParams = new URLSearchParams(window.location.search);
 const guid = urlParams.get('guid');
 
+const { DateTime } = luxon;
+
 
 function formatForDatetimeLocal(isoString) {
     if (!isoString) return "";
@@ -220,19 +222,13 @@ function SubmitForm() {
         const registerStart = document.getElementById("register-start").value;
         const registerEnd = document.getElementById("register-end").value;
 
-        const startUTC = registerStart
-            ? registerStart + ":00.000Z"
-            : null;
+        const startUTC = luxon.DateTime.fromISO(registerStart, {
+            zone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        });
 
-        const endUTC = registerEnd
-            ? registerEnd + ":00.000Z"
-            : null;
-
-        console.log("Input start:", registerStart);
-        console.log("UTC start:", startUTC);
-
-        console.log("Input end:", registerEnd);
-        console.log("UTC end:", endUTC);
+        const endUTC = luxon.DateTime.fromISO(registerEnd, {
+            zone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        });
 
         const formData = {
             "automated": document.getElementById('automated').value === 'true',
@@ -275,11 +271,6 @@ function SubmitForm() {
             "age_check_number": parseInt(document.getElementById('age-check-number').value) || null
         }
 
-        console.log("FORM DATA BEING SENT:");
-        console.log(formData);
-
-        console.log("FORM DATA JSON:");
-        console.log(JSON.stringify(formData));
         fetch(url, {
             method: 'PUT',
             headers: {
