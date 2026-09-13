@@ -224,11 +224,11 @@ function SubmitForm() {
 
         const startUTC = luxon.DateTime.fromISO(registerStart, {
             zone: Intl.DateTimeFormat().resolvedOptions().timeZone
-        });
+        }).toUTC().toISO();
 
         const endUTC = luxon.DateTime.fromISO(registerEnd, {
             zone: Intl.DateTimeFormat().resolvedOptions().timeZone
-        });
+        }).toUTC().toISO();
 
         const formData = {
             "automated": document.getElementById('automated').value === 'true',
