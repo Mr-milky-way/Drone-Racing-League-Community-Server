@@ -43,26 +43,26 @@ window.onload = function () {
             document.getElementById('video-url').value = t['video-url'] || null;
             document.getElementById('streaming-url').value = t['streaming-url'] || null;
             document.getElementById('terms-and-conditions-url').value = t['terms-and-conditions-url'] || null,
-            document.getElementById('region').value = t['region'] || "us",
-            document.getElementById('max-players').value = t['max-players'] || null,
-            document.getElementById('register-start').value = formatForDatetimeLocal(t['register-start']) || null,
-            document.getElementById('register-end').value = formatForDatetimeLocal(t['register-end']) || null,
-            document.getElementById('status').value = t['status'] || null,
-            document.getElementById('type').value = t['type'] || null,
-            document.getElementById('progression').value = t['progression'] || 'auto',
-            document.getElementById('allow-new-registration').value = t['allow-new-registration'] === 1,
-            document.getElementById('lan-support').value = t['lan-support'] === 1,
-            document.getElementById('server-ip').value = t['server-ip'] || null,
-            document.getElementById('disable-public-spectators').value = t['disable-public-spectators'] === 1,
-            document.getElementById('private').value = t['private'] === 1,
-            document.getElementById('penalty').value = t['penalty'] === 1,
-            document.getElementById('drl-pilot-mode').value = t['drl-pilot-mode'] === 1,
-            document.getElementById('drone-guid').value = t['drone-guid'] || null,
-            document.getElementById('drone-class').value = t['drone-class'] || null,
-            document.getElementById('countdown').value = t['countdown'] === 1,
-            document.getElementById('minimum-skill').value = t['minimum-skill'] || 0,
-            document.getElementById('age-check').value = t['age-check'] === 1,
-            document.getElementById('age-check-number').value = t['age-check-number'] || 0
+                document.getElementById('region').value = t['region'] || "us",
+                document.getElementById('max-players').value = t['max-players'] || null,
+                document.getElementById('register-start').value = formatForDatetimeLocal(t['register-start']) || null,
+                document.getElementById('register-end').value = formatForDatetimeLocal(t['register-end']) || null,
+                document.getElementById('status').value = t['status'] || null,
+                document.getElementById('type').value = t['type'] || null,
+                document.getElementById('progression').value = t['progression'] || 'auto',
+                document.getElementById('allow-new-registration').value = t['allow-new-registration'] === 1,
+                document.getElementById('lan-support').value = t['lan-support'] === 1,
+                document.getElementById('server-ip').value = t['server-ip'] || null,
+                document.getElementById('disable-public-spectators').value = t['disable-public-spectators'] === 1,
+                document.getElementById('private').value = t['private'] === 1,
+                document.getElementById('penalty').value = t['penalty'] === 1,
+                document.getElementById('drl-pilot-mode').value = t['drl-pilot-mode'] === 1,
+                document.getElementById('drone-guid').value = t['drone-guid'] || null,
+                document.getElementById('drone-class').value = t['drone-class'] || null,
+                document.getElementById('countdown').value = t['countdown'] === 1,
+                document.getElementById('minimum-skill').value = t['minimum-skill'] || 0,
+                document.getElementById('age-check').value = t['age-check'] === 1,
+                document.getElementById('age-check-number').value = t['age-check-number'] || 0
         })
         .catch(error => {
             console.error('Error:', error);
@@ -220,8 +220,13 @@ function SubmitForm() {
         const registerStart = document.getElementById("register-start").value;
         const registerEnd = document.getElementById("register-end").value;
 
-        const startUTC = new Date(registerStart).toISOString();
-        const endUTC = new Date(registerEnd).toISOString();
+        const startUTC = registerStart
+            ? registerStart + ":00.000Z"
+            : null;
+
+        const endUTC = registerEnd
+            ? registerEnd + ":00.000Z"
+            : null;
 
         const formData = {
             "automated": document.getElementById('automated').value === 'true',
@@ -242,7 +247,7 @@ function SubmitForm() {
             "video_url": document.getElementById('video-url').value || null,
             "streaming_url": document.getElementById('streaming-url').value || null,
             "terms_and_conditions_url": document.getElementById('terms-and-conditions-url').value || null,
-            "reigon": document.getElementById('region').value || null,
+            "region": document.getElementById('region').value || null,
             "max_players": parseInt(document.getElementById('max-players').value) || null,
             "register_start": startUTC || null,
             "register_end": endUTC || null,
@@ -263,8 +268,6 @@ function SubmitForm() {
             "age_check": document.getElementById('age-check').value === 'true',
             "age_check_number": parseInt(document.getElementById('age-check-number').value) || null
         }
-
-
         fetch(url, {
             method: 'PUT',
             headers: {

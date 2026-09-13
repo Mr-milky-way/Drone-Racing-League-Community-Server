@@ -3782,7 +3782,7 @@ app.post(`/tournaments/:guid/scores`, express.urlencoded({ extended: true }), ba
                     if (tournament.rounds[i].matches[e].heats > tournament.rounds[i].matches[e].current_heat) {
                         tournament.rounds[i].matches[e].current_heat++;
                         tournament.rounds[i].matches[e].active_heat++;
-                    }else if (tournament.rounds[i].matches[e].active_heat < tournament.rounds[i].matches[e].heats) {
+                    } else if (tournament.rounds[i].matches[e].active_heat < tournament.rounds[i].matches[e].heats) {
                         tournament.rounds[i].matches[e].active_heat++; // For the last round
                     } else {
                         console.log("marking match as complete")
