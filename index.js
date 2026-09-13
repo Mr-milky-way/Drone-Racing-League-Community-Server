@@ -2389,7 +2389,7 @@ app.post('/state/', express.urlencoded(), badTokenAuthv2, (req, res) => {
 ---------------------------------------------------------------------------------------------------
 */
 
-const QualsTimeMins = 10
+const QualsTimeMins = 20
 
 const RoundTimeMaxMins = 90
 
@@ -5463,6 +5463,28 @@ app.get('/admin/players', (req, res) => {
 
         res.status(200).json({ success: true, data: jsondata });
     })
+})
+
+app.post(`/admin/tournaments/delete/:guid`, express.json(), (req, res) => {
+    const guid = req.params.guid;
+
+    db.run(`DELETE FROM tournaments where guid = ?`, [guid])
+    db.run(`DELETE FROM tournamentrounds where guid = ?`, [guid])
+    db.run(`DELETE FROM tournamentroundmatches where guid = ?`, [guid])
+    db.run(`DELETE FROM tournamentroundscoring where guid = ?`, [guid])
+    db.run(`DELETE FROM tournamentmatchplayerdata where guid = ?`, [guid])
+    db.run(`DELETE FROM tournamentoverallplayerdata where guid = ?`, [guid])
+
+
+    tournamentsMap.delete(guid);
+
+    tournamentRoundScoring[guid] = {};
+    tournamentMatchPlayerData[guid] = {};
+
+    tournamentOverallPlayerData[guid] = {};
+
+    TournamentMatchReplays[guid] = {};
+    res.status(200).json({ success: true })
 })
 
 app.post(`/admin/tournaments/create/`, express.json(), (req, res) => {

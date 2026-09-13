@@ -217,6 +217,12 @@ function SubmitForm() {
     try {
         const url = '/admin/tournaments/update/' + guid;
 
+        const registerStart = document.getElementById("register-start").value;
+        const registerEnd = document.getElementById("register-end").value;
+
+        const startUTC = new Date(registerStart).toISOString();
+        const endUTC = new Date(registerEnd).toISOString();
+
         const formData = {
             "automated": document.getElementById('automated').value === 'true',
             "recurr_every_days": parseInt(document.getElementById('recurr-every').value) || null,
@@ -238,8 +244,8 @@ function SubmitForm() {
             "terms_and_conditions_url": document.getElementById('terms-and-conditions-url').value || null,
             "reigon": document.getElementById('region').value || null,
             "max_players": parseInt(document.getElementById('max-players').value) || null,
-            "register_start": document.getElementById('register-start').value || null,
-            "register_end": document.getElementById('register-end').value || null,
+            "register_start": startUTC || null,
+            "register_end": endUTC || null,
             "status": document.getElementById('status').value || null,
             "type": document.getElementById('type').value || null,
             "progression": document.getElementById('progression').value || null,
@@ -265,6 +271,41 @@ function SubmitForm() {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(formData)
+        })
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(data => {
+                window.location.href = '/admin/tournaments/';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert(error)
+            });
+    } catch (error) {
+        alert('Error: ' + error);
+    }
+}
+
+
+
+
+
+
+
+
+
+function Delete() {
+    try {
+        const url = '/admin/tournaments/delete/' + guid;
+
+
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
         })
             .then(response => {
                 if (!response.ok) throw new Error('Network response was not ok');
