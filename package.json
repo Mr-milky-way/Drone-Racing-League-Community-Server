@@ -28,7 +28,7 @@
     "express-rate-limit": "^8.5.1",
     "express-session": "^1.19.0",
     "lusca": "^1.7.0",
-    "multer": "^2.3.0",
+    "multer": "^2.4.0",
     "pm2": "^7.0.4",
     "sharp": "^0.35.4",
     "sqlite3": "^6.0.1",
