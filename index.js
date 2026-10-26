@@ -2683,7 +2683,7 @@ async function updateTournament(tournament, now) {
     if (tournament.status === "idle" && new Date(tournament.register_end) <= now) {
         tournament.allow_new_registration = 0;
         tournament.status = "active";
-        tournament.rounds = await createTournamentRounds(tournament, 6, "DRL")
+        tournament.rounds = await createTournamentRounds(tournament, 10, "DRL")
     }
 
 
